@@ -73,3 +73,34 @@ cleanup:
   script:
     - podman rm -f api || true
     - podman network rm "ci-$CI_PIPELINE_ID" || true
+
+
+# Dump WAN packets from VM1's netdev to a pcap
+-object filter-dump,id=d1,netdev=wan0,file=vm1-wan.pcap
+
+Replace the UPPERCASE bits with your actual values. If the guests’ static configs are pinned to NIC MAC addresses, set mac= accordingly.
+
+#VM1
+qemu-system-x86_64 \
+  -enable-kvm -m 4096 -smp 4 -drive file=vm1.qcow2,if=virtio \
+  \
+  # WAN via passt, DHCP off; mimic guest's existing subnet/gw
+  -device virtio-net-pci,netdev=wan0,mac=VM1_WAN_MAC \
+  -netdev passt,id=wan0,dhcp=off,address=GATEWAY_IP,netmask=SUBNET_MASK,gateway=GATEWAY_IP,hostfwd=tcp::2221-:22 \
+  \
+  # Private inter-VM link (L2 "cable")
+  -device virtio-net-pci,netdev=link0,mac=VM1_LINK_MAC \
+  -netdev socket,id=link0,listen=:12345
+
+
+#VM2
+qemu-system-x86_64 \
+  -enable-kvm -m 4096 -smp 4 -drive file=vm2.qcow2,if=virtio \
+  \
+  # WAN via passt, DHCP off; same subnet/gw as VM1
+  -device virtio-net-pci,netdev=wan0,mac=VM2_WAN_MAC \
+  -netdev passt,id=wan0,dhcp=off,address=GATEWAY_IP,netmask=SUBNET_MASK,gateway=GATEWAY_IP,hostfwd=tcp::2222-:22 \
+  \
+  # Private inter-VM link
+  -device virtio-net-pci,netdev=link0,mac=VM2_LINK_MAC \
+  -netdev socket,id=link0,connect=:12345
